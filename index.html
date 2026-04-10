@@ -45,7 +45,7 @@
         // ==========================================
 
         
-        // 我们提取了一些核心图标的简易 SVG，确保免安装也能完美显示
+        // 我们提取了一些核心图标的简易 SVG
         const PlaneIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.2-1.1.6L3 8l6 5-3 3-3-1-2 2 4 4 2-2-1-3 3-3 5 6 1.2-.7c.4-.2.7-.6.6-1.1Z"/></svg>;
         const MapPinIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-blue-500"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>;
         const CalendarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-blue-500"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
@@ -68,65 +68,61 @@
           }
         };
 
-        // --- 核心新组件：手绘漫画风格静态路线图 ---
+        // --- 核心新组件：大富翁式拓扑寻宝路线图 (解决重叠问题) ---
         function ComicRouteMap({ itinerary }) {
           if (!itinerary || !itinerary.days) return null;
 
+          // 提取所有有名称的地点作为关键节点
           const points = [];
           itinerary.days.forEach(day => {
             day.activities.forEach(act => {
-              // 为了防止坐标完全重合，加入极微小的随机抖动
-              if (act.lat && act.lng) {
-                const jitter = (Math.random() - 0.5) * 0.005;
-                points.push({ ...act, day: day.dayNumber, lat: act.lat + jitter, lng: act.lng + jitter });
+              if (act.name) {
+                points.push({ ...act, day: day.dayNumber });
               }
             });
           });
 
           if (points.length === 0) return null;
 
-          // 计算边界框
-          const lats = points.map(p => p.lat);
-          const lngs = points.map(p => p.lng);
-          const minLat = Math.min(...lats);
-          const maxLat = Math.max(...lats);
-          const minLng = Math.min(...lngs);
-          const maxLng = Math.max(...lngs);
-
-          // SVG 视口尺寸
+          // 使用大富翁式蛇形布局 (S-shape/Zig-zag)
+          const pointsPerRow = 4; // 每行最多放4个景点
+          const rowHeight = 140;  // 行间距加大，防重叠
+          const startX = 80;
+          const endX = 720;
+          const startY = 80;
+          const xStep = (endX - startX) / (pointsPerRow - 1);
+          
+          const numRows = Math.ceil(points.length / pointsPerRow);
           const svgWidth = 800;
-          const svgHeight = 400;
-          const paddingX = 80;
-          const paddingY = 60;
+          const svgHeight = startY + (numRows - 1) * rowHeight + 120; // 动态高度
 
-          // 坐标映射函数
-          const getX = (lng) => {
-            if (maxLng === minLng) return svgWidth / 2;
-            return paddingX + ((lng - minLng) / (maxLng - minLng)) * (svgWidth - 2 * paddingX);
-          };
-          const getY = (lat) => {
-            if (maxLat === minLat) return svgHeight / 2;
-            // 纬度越高在地图上越靠上（Y轴越小）
-            return paddingY + (1 - (lat - minLat) / (maxLat - minLat)) * (svgHeight - 2 * paddingY);
-          };
+          // 计算每个节点的拓扑固定坐标
+          const mappedPoints = points.map((p, i) => {
+            const row = Math.floor(i / pointsPerRow);
+            const col = i % pointsPerRow;
+            // 蛇形走位：偶数行从左到右，奇数行从右到左
+            const actualCol = row % 2 === 0 ? col : (pointsPerRow - 1 - col);
+            
+            // 加上微小的视觉随机抖动，让手绘感更强，但不影响防重叠
+            const jitterX = (Math.random() * 20 - 10);
+            const jitterY = (Math.random() * 20 - 10);
 
-          const mappedPoints = points.map(p => ({
-            ...p,
-            x: getX(p.lng),
-            y: getY(p.lat)
-          }));
+            const x = startX + actualCol * xStep + jitterX;
+            const y = startY + row * rowHeight + jitterY;
+            return { ...p, x, y };
+          });
 
-          // 贝塞尔曲线平滑连线
+          // 绘制圆滑连线
           let pathD = "";
           if (mappedPoints.length > 0) {
               pathD = `M ${mappedPoints[0].x},${mappedPoints[0].y} `;
               for (let i = 1; i < mappedPoints.length; i++) {
-                  // 简单的二次贝塞尔曲线产生手绘扭曲感
                   const prev = mappedPoints[i - 1];
                   const curr = mappedPoints[i];
-                  const midX = (prev.x + curr.x) / 2 + (Math.random() * 20 - 10);
-                  const midY = (prev.y + curr.y) / 2 + (Math.random() * 20 - 10);
-                  pathD += `Q ${midX},${midY} ${curr.x},${curr.y} `;
+                  // 使用二次贝塞尔曲线平滑拐角
+                  const midX = (prev.x + curr.x) / 2;
+                  const midY = (prev.y + curr.y) / 2;
+                  pathD += `Q ${prev.x},${midY} ${midX},${midY} T ${curr.x},${curr.y} `;
               }
           }
 
@@ -134,33 +130,33 @@
             <div className="mb-8 comic-bg rounded-[2rem] border-4 border-slate-800 shadow-[8px_8px_0px_rgba(30,41,59,1)] p-6 relative overflow-hidden">
               <div className="absolute top-4 left-6 flex items-center space-x-2">
                  <span className="text-2xl">🗺️</span>
-                 <h3 className="text-xl font-black text-slate-800 tracking-widest">寻宝路线图</h3>
+                 <h3 className="text-xl font-black text-slate-800 tracking-widest">专属寻宝路线图</h3>
               </div>
               
               <div className="w-full overflow-x-auto mt-8 pt-4 pb-4">
                 <div className="min-w-[600px] relative">
                   <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto drop-shadow-md">
                     
-                    {/* 路线虚线 */}
-                    <path d={pathD} fill="none" stroke="#ef4444" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="15, 15" className="opacity-80" />
+                    {/* 寻宝虚线 */}
+                    <path d={pathD} fill="none" stroke="#ef4444" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="12, 16" className="opacity-80" />
                     
                     {/* 绘制地标节点 */}
                     {mappedPoints.map((p, i) => {
                       let color = '#3b82f6'; 
                       let emoji = '📍';
                       if(p.type === 'food') { color = '#f97316'; emoji = '🍔'; }
-                      if(p.type === 'hotel') { color = '#8b5cf6'; emoji = '🏨'; }
-                      if(p.type === 'attraction') { color = '#10b981'; emoji = '📸'; }
-                      if(p.type === 'shopping') { color = '#ec4899'; emoji = '🛍️'; }
-                      if(p.type === 'transport') { color = '#64748b'; emoji = '🚗'; }
+                      else if(p.type === 'hotel') { color = '#8b5cf6'; emoji = '🏨'; }
+                      else if(p.type === 'attraction') { color = '#10b981'; emoji = '📸'; }
+                      else if(p.type === 'shopping') { color = '#ec4899'; emoji = '🛍️'; }
+                      else if(p.type === 'transport') { color = '#64748b'; emoji = '🚗'; }
 
-                      // 防止文字重叠，奇偶数节点标签上下交错
-                      const textYOffset = i % 2 === 0 ? -35 : 45;
+                      // 统一把文字放到底部，因为行距已经拉开，彻底解决重叠
+                      const textYOffset = 45;
 
                       return (
                         <g key={i} transform={`translate(${p.x}, ${p.y})`}>
                           {/* 节点气泡阴影和背景 */}
-                          <circle cx="0" cy="0" r="22" fill="white" stroke="#1e293b" strokeWidth="3" className="drop-shadow-sm" />
+                          <circle cx="0" cy="0" r="22" fill="white" stroke="#1e293b" strokeWidth="3" className="drop-shadow-sm transition-transform hover:scale-110 cursor-pointer" />
                           {/* Emoji */}
                           <text x="0" y="8" fontSize="22" textAnchor="middle">{emoji}</text>
                           {/* D天数标签 */}
@@ -168,9 +164,9 @@
                             <circle cx="0" cy="0" r="10" fill={color} stroke="white" strokeWidth="2" />
                             <text x="0" y="4" fontSize="10" fill="white" fontWeight="bold" textAnchor="middle">D{p.day}</text>
                           </g>
-                          {/* 地点名称 */}
-                          <text x="0" y={textYOffset} fontSize="14" fontWeight="900" fill="#1e293b" textAnchor="middle" style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: '4px', strokeLinecap: 'round', strokeLinejoin: 'round' }}>
-                            {p.name.substring(0, 6)}{p.name.length > 6 ? '..' : ''}
+                          {/* 地点名称 (最多显示6个字防溢出) */}
+                          <text x="0" y={textYOffset} fontSize="14" fontWeight="900" fill="#1e293b" textAnchor="middle" style={{ paintOrder: 'stroke', stroke: 'white', strokeWidth: '5px', strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+                            {p.name.substring(0, 6)}{p.name.length > 6 ? '...' : ''}
                           </text>
                         </g>
                       );
@@ -238,11 +234,12 @@
               - 偏好类型: ${formData.preferences.length > 0 ? formData.preferences.join('、') : '未指定'}
               
               要求：
-              1. 每天行程包含具体地点。
-              2. 必须包含真实的经纬度坐标(lat, lng)用于绘制静态地图。
-              3. 每个地点需要给出详尽的建议。
+              1. 每天的行程必须独立提供一个详细的【酒店住宿建议】。
+              2. 每天包含2-4个具体游玩/餐饮地点。
+              3. 每个地点需要给出详尽的避坑和游玩建议。
             `;
 
+            // ⚠️ 核心升级：强迫AI输出独立的酒店模块
             const systemPrompt = `
               你是一个专业旅游规划师。请严格输出以下JSON，不要Markdown和其他任何解释性文字：
               {
@@ -252,16 +249,19 @@
                 "days": [
                   {
                     "dayNumber": 1,
-                    "theme": "主题",
+                    "theme": "今天的主题",
+                    "hotel": {
+                      "name": "推荐的酒店/民宿名称（必须具体）",
+                      "price": "大概价格区间（如：400元/晚）",
+                      "description": "详细的推荐理由，比如位置优势、特色风景等"
+                    },
                     "activities": [
                       {
                         "time": "09:00",
                         "name": "地点名称",
-                        "type": "attraction/food/hotel/shopping/transport",
-                        "description": "请提供非常详细的背景介绍、必体验项目、推荐理由（至少80字以上），不要敷衍。",
-                        "tips": "必填：提供实用的防坑贴士，如：推荐菜品、门票大概价格、最佳拍照机位或交通建议。",
-                        "lat": 纬度(数字),
-                        "lng": 经度(数字)
+                        "type": "attraction/food/shopping/transport",
+                        "description": "请提供非常详细的背景介绍、必体验项目（至少80字以上）",
+                        "tips": "必填：提供实用的防坑贴士，如：推荐菜品、最佳拍照机位或交通建议"
                       }
                     ]
                   }
@@ -270,7 +270,6 @@
             `;
 
             try {
-              // 使用配置好的 apiBaseUrl 发送请求 (DeepSeek 兼容 OpenAI 格式)
               const result = await fetchWithRetry(
                 `${apiBaseUrl}/chat/completions`,
                 {
@@ -325,7 +324,7 @@
                       POWERED BY DEEPSEEK
                     </span>
                     <h2 className="text-5xl md:text-7xl font-extrabold text-white mb-6 tracking-tight drop-shadow-lg">生成你的专属旅行</h2>
-                    <p className="text-lg text-slate-100 mb-12 font-medium">一键获取包含漫画手绘路线图、图文并茂的个性化深度游手账。</p>
+                    <p className="text-lg text-slate-100 mb-12 font-medium">一键获取包含漫画手绘路线图、酒店住宿推荐的个性化深度游手账。</p>
 
                     <div className="bg-white/95 backdrop-blur-2xl rounded-[2rem] shadow-2xl p-6 md:p-8 max-w-4xl mx-auto text-left border border-white/40">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
@@ -358,14 +357,14 @@
                         <div className="mb-5 p-3.5 bg-red-50 text-red-600 rounded-xl flex items-center text-sm font-medium"><AlertIcon /> {error}</div>
                       )}
 
-                      <button onClick={handleGenerate} disabled={loading} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-lg rounded-xl shadow-xl flex items-center justify-center">
+                      <button onClick={handleGenerate} disabled={loading} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-lg rounded-xl shadow-xl flex items-center justify-center transition-all hover:scale-[1.01]">
                         {loading ? <><LoaderIcon /> 小智同学正在为您绘制漫画路线图与攻略...</> : '开始智能规划'}
                       </button>
                     </div>
                   </div>
                 </main>
               ) : (
-                /* --- 沉浸式单列布局，像阅读游记一样体验 --- */
+                /* --- 沉浸式单列布局 --- */
                 <main className="pt-24 pb-16 max-w-4xl mx-auto px-4 md:px-6 flex flex-col">
                   
                   {/* 返回操作栏 */}
@@ -375,7 +374,7 @@
                   
                   {/* 头部大图与标题 */}
                   <div className="bg-gradient-to-br from-blue-600 to-purple-700 rounded-[2rem] p-8 md:p-12 text-white mb-8 shadow-xl relative overflow-hidden group">
-                    <img src={`https://picsum.photos/seed/${encodeURIComponent(itineraryData.destination + '风景')}/1200/600`} className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-50 transition-opacity duration-700" alt="封面" />
+                    <img src={`https://picsum.photos/seed/${encodeURIComponent(itineraryData.destination + '全景')}/1200/600`} className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-50 transition-opacity duration-700" alt="封面" />
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent"></div>
                     <div className="relative z-10">
                       <span className="inline-block py-1 px-3 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold tracking-widest mb-4 border border-white/30">专属制定</span>
@@ -386,30 +385,47 @@
                     </div>
                   </div>
 
-                  {/* 静态漫画风路线图 */}
+                  {/* 静态大富翁风路线图 (防重叠) */}
                   <ComicRouteMap itinerary={itineraryData} />
 
                   {/* 每日详细图文手账 */}
                   <div className="space-y-10">
                     {itineraryData.days.map((day, idx) => (
                       <div key={idx} className="bg-white rounded-[2rem] shadow-md border border-slate-200 p-6 md:p-8">
-                        <h3 className="text-2xl font-black mb-8 flex items-center text-slate-800 border-b border-slate-100 pb-4">
+                        <h3 className="text-2xl font-black mb-6 flex items-center text-slate-800 border-b border-slate-100 pb-4">
                           <span className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white px-4 py-1.5 rounded-full text-base mr-3 shadow-md">第 {day.dayNumber} 天</span> 
                           {day.theme}
                         </h3>
+
+                        {/* 🌟 核心升级：专属独立酒店模块 */}
+                        {day.hotel && (
+                          <div className="mb-8 bg-blue-50 border-l-4 border-blue-500 rounded-r-2xl p-5 shadow-sm relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">🏨</div>
+                            <h4 className="text-lg font-black text-blue-900 mb-2 flex items-center">
+                              <span className="mr-2">🏨</span> 专属住宿推荐：{day.hotel.name}
+                            </h4>
+                            <div className="text-blue-700 font-bold mb-3 bg-white inline-block px-3 py-1 rounded-lg shadow-sm text-sm">
+                              预计花费：{day.hotel.price}
+                            </div>
+                            <p className="text-slate-600 text-sm leading-relaxed mb-4 font-medium relative z-10">
+                              {day.hotel.description}
+                            </p>
+                            <a href={`https://m.ctrip.com/html5/hotel/hotelsearch?keyword=${day.hotel.name}`} target="_blank" className="inline-flex items-center text-sm font-bold text-white bg-blue-600 px-5 py-2 rounded-xl shadow-md hover:bg-blue-700 transition-all relative z-10">
+                              前往携程查看房型及预订 ↗
+                            </a>
+                          </div>
+                        )}
                         
-                        <div className="space-y-10">
+                        {/* 游玩环节 */}
+                        <div className="space-y-10 relative">
                           {day.activities.map((act, i) => (
                             <div key={i} className="relative">
-                              {/* 时间轴样式 */}
                               <div className="flex items-center mb-4">
                                 <div className="font-black text-lg text-blue-600 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100">{act.time}</div>
                                 <div className="ml-4 font-black text-2xl text-slate-800">{act.name}</div>
                               </div>
                               
-                              {/* 图文并茂区块 */}
                               <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-                                {/* 文字与链接区 */}
                                 <div className="md:col-span-3 space-y-4">
                                   <div className="text-base text-slate-600 leading-loose font-medium text-justify">
                                     {act.description}
@@ -422,20 +438,13 @@
                                     </div>
                                   )}
 
-                                  {/* 直达链接与视频检索 */}
                                   <div className="flex flex-wrap gap-3 pt-2">
-                                    {/* 新增：B站视频攻略按钮 */}
                                     <a href={`https://search.bilibili.com/all?keyword=${act.name} Vlog 旅游`} target="_blank" className="inline-flex items-center text-sm font-bold text-pink-600 bg-pink-50 px-4 py-2 rounded-xl border border-pink-200 hover:bg-pink-500 hover:text-white transition-all shadow-sm">
-                                      ▶️ 看 B站 Vlog
+                                      ▶️ 查 B站 Vlog
                                     </a>
                                     {act.type === 'food' && (
                                       <a href={`https://www.dianping.com/search/keyword/0/0_${act.name}`} target="_blank" className="inline-flex items-center text-sm font-bold text-orange-600 bg-orange-50 px-4 py-2 rounded-xl border border-orange-200 hover:bg-orange-500 hover:text-white transition-all shadow-sm">
                                         🍔 大众点评
-                                      </a>
-                                    )}
-                                    {act.type === 'hotel' && (
-                                      <a href={`https://m.ctrip.com/html5/hotel/hotelsearch?keyword=${act.name}`} target="_blank" className="inline-flex items-center text-sm font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-xl border border-blue-200 hover:bg-blue-600 hover:text-white transition-all shadow-sm">
-                                        🏨 携程比价
                                       </a>
                                     )}
                                     {(act.type === 'attraction' || act.type === 'transport' || act.type === 'shopping') && (
@@ -446,28 +455,22 @@
                                   </div>
                                 </div>
 
-                                {/* 动态配图区 (使用随机照片库模拟) */}
-                                {(act.type === 'attraction' || act.type === 'hotel' || act.type === 'food' || act.type === 'shopping') && (
-                                  <div className="md:col-span-2">
-                                    <div className="rounded-2xl overflow-hidden shadow-md border-4 border-white transform transition duration-500 hover:scale-105 hover:rotate-1 relative group aspect-[4/3] bg-slate-100">
-                                      <img 
-                                        src={`https://picsum.photos/seed/${encodeURIComponent(act.name)}/600/400`} 
-                                        alt={act.name} 
-                                        className="w-full h-full object-cover"
-                                        loading="lazy"
-                                      />
-                                      {/* 图片上的标签 */}
-                                      <div className="absolute bottom-3 right-3 bg-black/50 backdrop-blur-md text-white text-xs font-bold px-2 py-1 rounded-lg">
-                                        实景参考
-                                      </div>
-                                    </div>
+                                {/* 动态配图区 */}
+                                <div className="md:col-span-2">
+                                  <div className="rounded-2xl overflow-hidden shadow-md border-4 border-white transform transition duration-500 hover:scale-105 hover:rotate-1 relative group aspect-[4/3] bg-slate-100">
+                                    <img 
+                                      src={`https://picsum.photos/seed/${encodeURIComponent(act.name + '风景')}/600/400`} 
+                                      alt={act.name} 
+                                      className="w-full h-full object-cover"
+                                      loading="lazy"
+                                    />
+                                    <div className="absolute bottom-3 right-3 bg-black/50 backdrop-blur-md text-white text-xs font-bold px-2 py-1 rounded-lg">实景参考</div>
                                   </div>
-                                )}
+                                </div>
                               </div>
                               
-                              {/* 节点分隔线 */}
                               {i !== day.activities.length - 1 && (
-                                <div className="w-full h-px bg-slate-100 my-8"></div>
+                                <div className="w-full border-t-2 border-dashed border-slate-200 my-8"></div>
                               )}
                             </div>
                           ))}
