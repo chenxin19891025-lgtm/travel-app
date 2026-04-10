@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智绘旅途 - AI个性化旅游路线定制</title>
+    
+    <!-- 引入 React 和 ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- 引入 Babel (用于在浏览器中编译 JSX) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Leaflet 地图样式和脚本 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-[#f8fafc] font-sans text-slate-800">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // ==========================================
+        // ⚠️ 非常重要：请在这里填入你的 Google Gemini API Key
+        // 如果不填，点击生成按钮将会报错！
+        // ==========================================
+        const apiKey = ""; 
+        
+        // 我们提取了一些核心图标的简易 SVG，确保免安装也能完美显示
+        const PlaneIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.2-1.1.6L3 8l6 5-3 3-3-1-2 2 4 4 2-2-1-3 3-3 5 6 1.2-.7c.4-.2.7-.6.6-1.1Z"/></svg>;
+        const MapPinIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-blue-500"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>;
+        const CalendarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-blue-500"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
+        const DollarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-blue-500"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
+        const CompassIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-blue-500"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>;
+        const LoaderIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>;
+        const AlertIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 flex-shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>;
+
+        const fetchWithRetry = async (url, options, retries = 5) => {
+          const delays = [1000, 2000, 4000, 8000, 16000];
+          for (let i = 0; i < retries; i++) {
+            try {
+              const res = await fetch(url, options);
+              if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+              return await res.json();
+            } catch (e) {
+              if (i === retries - 1) throw e;
+              await new Promise(r => setTimeout(r, delays[i]));
+            }
+          }
+        };
+
+        function App() {
+          const [formData, setFormData] = useState({
+            destination: '',
+            days: '',
+            budget: '',
+            preferences: []
+          });
+          const [loading, setLoading] = useState(false);
+          const [error, setError] = useState('');
+          const [itineraryData, setItineraryData] = useState(null);
+
+          const preferenceOptions = ['自然风光', '人文历史', '特色美食', '休闲度假', '网红打卡', '特种兵', '亲子游', '买买买'];
+
+          const handleInputChange = (e) => {
+            const { name, value } = e.target;
+            setFormData(prev => ({ ...prev, [name]: value }));
+          };
+
+          const togglePreference = (pref) => {
+            setFormData(prev => {
+              const prefs = prev.preferences;
+              if (prefs.includes(pref)) {
+                return { ...prev, preferences: prefs.filter(p => p !== pref) };
+              } else {
+                return { ...prev, preferences: [...prefs, pref] };
+              }
+            });
+          };
+
+          const handleGenerate = async () => {
+            if (!apiKey) {
+              setError('由于没有配置 API Key，无法调用 AI，请在代码第41行填入您的 Google API Key。');
+              return;
+            }
+
+            const filledFields = Object.values(formData).filter(val => 
+              Array.isArray(val) ? val.length > 0 : val.trim() !== ''
+            ).length;
+            
+            if (filledFields < 2) {
+              setError('请至少填写/选择两个条件（例如：目的地和偏好），以便AI更好地为您规划。');
+              return;
+            }
+
+            setError('');
+            setLoading(true);
+            setItineraryData(null);
+
+            const userQuery = `
+              请为我生成一份详细的个性化旅游攻略。已知条件如下：
+              - 目的地: ${formData.destination || '未指定'}
+              - 旅行天数: ${formData.days || '未指定'}
+              - 预算: ${formData.budget || '未指定'}
+              - 偏好类型: ${formData.preferences.length > 0 ? formData.preferences.join('、') : '未指定'}
+              
+              要求：
+              1. 每天行程包含具体地点。
+              2. 必须包含真实的经纬度坐标(lat, lng)用于地图绘制。
+              3. 提供吃住行建议。
+              4. 每个活动提供 imageKeyword。
+            `;
+
+            const systemPrompt = `
+              你是一个专业旅游规划师。请严格输出以下JSON，不要Markdown：
+              {
+                "destination": "目的地",
+                "summary": "一句总结",
+                "totalDays": "总天数",
+                "days": [
+                  {
+                    "dayNumber": 1,
+                    "theme": "主题",
+                    "activities": [
+                      {
+                        "time": "09:00",
+                        "name": "地点名称",
+                        "type": "attraction/food/hotel/shopping/transport",
+                        "description": "建议",
+                        "lat": 纬度,
+                        "lng": 经度,
+                        "imageKeyword": "英文关键词"
+                      }
+                    ]
+                  }
+                ]
+              }
+            `;
+
+            try {
+              const result = await fetchWithRetry(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    contents: [{ parts: [{ text: userQuery }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: { responseMimeType: "application/json" }
+                  })
+                }
+              );
+
+              const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (!text) throw new Error("AI未能返回有效内容");
+              
+              setItineraryData(JSON.parse(text));
+            } catch (err) {
+              console.error(err);
+              setError('生成发生错误，请检查网络或 API Key。');
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          return (
+            <div className="min-h-screen bg-[#f8fafc] font-sans text-slate-800">
+              <header className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md shadow-sm border-b border-white/20 transition-all">
+                <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-blue-600">
+                    <PlaneIcon />
+                    <h1 className="text-2xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">智绘旅途</h1>
+                  </div>
+                </div>
+              </header>
+
+              {!itineraryData ? (
+                <main className="relative min-h-screen flex items-center justify-center pt-16">
+                  <div className="absolute inset-0 z-0">
+                    <img src="https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?q=80&w=2070&auto=format&fit=crop" className="w-full h-full object-cover"/>
+                    <div className="absolute inset-0 bg-gradient-to-b from-slate-900/70 via-slate-900/40 to-slate-900/80"></div>
+                  </div>
+
+                  <div className="relative z-10 w-full max-w-5xl mx-auto px-4 text-center mt-[-5vh]">
+                    <span className="inline-block py-1 px-3 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold tracking-widest mb-6 border border-white/30">
+                      POWERED BY AI
+                    </span>
+                    <h2 className="text-5xl md:text-7xl font-extrabold text-white mb-6 tracking-tight drop-shadow-lg">生成你的专属旅行</h2>
+                    <p className="text-lg text-slate-100 mb-12 font-medium">一键获取包含真实地图路线、吃住行推荐的个性化深度游攻略。</p>
+
+                    <div className="bg-white/95 backdrop-blur-2xl rounded-[2rem] shadow-2xl p-6 md:p-8 max-w-4xl mx-auto text-left border border-white/40">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold text-slate-700 flex items-center"><MapPinIcon /> 目的地</label>
+                          <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} placeholder="大理 / 冰岛" className="w-full px-4 py-3.5 rounded-xl bg-slate-100/50 border outline-none focus:border-blue-500 font-medium"/>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold text-slate-700 flex items-center"><CalendarIcon /> 游玩天数</label>
+                          <input type="text" name="days" value={formData.days} onChange={handleInputChange} placeholder="例如：5天" className="w-full px-4 py-3.5 rounded-xl bg-slate-100/50 border outline-none focus:border-blue-500 font-medium"/>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold text-slate-700 flex items-center"><DollarIcon /> 行程预算</label>
+                          <input type="text" name="budget" value={formData.budget} onChange={handleInputChange} placeholder="例如：人均5000" className="w-full px-4 py-3.5 rounded-xl bg-slate-100/50 border outline-none focus:border-blue-500 font-medium"/>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 mb-8">
+                        <label className="text-sm font-bold text-slate-700 flex items-center"><CompassIcon /> 风格偏好 <span className="text-xs text-slate-400 font-normal ml-2">(可多选)</span></label>
+                        <div className="flex flex-wrap gap-2.5">
+                          {preferenceOptions.map(pref => (
+                            <button key={pref} type="button" onClick={() => togglePreference(pref)} className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${formData.preferences.includes(pref) ? 'bg-blue-500 text-white border-blue-500 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                              {pref}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {error && (
+                        <div className="mb-5 p-3.5 bg-red-50 text-red-600 rounded-xl flex items-center text-sm font-medium"><AlertIcon /> {error}</div>
+                      )}
+
+                      <button onClick={handleGenerate} disabled={loading} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-lg rounded-xl shadow-xl flex items-center justify-center">
+                        {loading ? <><LoaderIcon /> AI 正在为您规划航线...</> : '开始智能规划'}
+                      </button>
+                    </div>
+                  </div>
+                </main>
+              ) : (
+                <main className="pt-24 pb-8 max-w-[1500px] mx-auto px-4 md:px-6 h-screen flex flex-col">
+                  <div className="bg-white rounded-2xl p-4 mb-6 flex gap-4 shrink-0 shadow-sm border border-slate-200">
+                    <button onClick={() => setItineraryData(null)} className="px-6 py-2 bg-slate-100 font-bold rounded-xl text-sm">返回</button>
+                  </div>
+                  <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
+                    <div className="lg:col-span-5 overflow-y-auto pr-2 custom-scrollbar pb-20">
+                      <div className="bg-gradient-to-br from-blue-600 to-purple-700 rounded-[2rem] p-8 text-white mb-6 shadow-xl">
+                        <h2 className="text-4xl font-black mb-3">{itineraryData.destination}</h2>
+                        <p className="bg-black/20 p-4 rounded-2xl text-sm leading-relaxed">{itineraryData.summary}</p>
+                      </div>
+                      <div className="space-y-8">
+                        {itineraryData.days.map((day, idx) => (
+                          <div key={idx} className="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-6">
+                            <h3 className="text-xl font-black mb-4">D{day.dayNumber} {day.theme}</h3>
+                            <div className="space-y-4">
+                              {day.activities.map((act, i) => (
+                                <div key={i} className="border-l-4 border-blue-500 pl-4 py-2">
+                                  <div className="font-bold text-sm text-blue-600">{act.time}</div>
+                                  <div className="font-bold text-lg">{act.name}</div>
+                                  <div className="text-sm text-slate-500 mt-1">{act.description}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="lg:col-span-7 bg-white rounded-[2rem] shadow-sm border border-slate-200 relative min-h-[500px]">
+                      <MapComponent itinerary={itineraryData} />
+                    </div>
+                  </div>
+                </main>
+              )}
+            </div>
+          );
+        }
+
+        function MapComponent({ itinerary }) {
+          const mapRef = useRef(null);
+          const mapInstanceRef = useRef(null);
+
+          useEffect(() => {
+            if (!mapRef.current || !itinerary || !window.L) return;
+
+            const coordinates = [];
+            const markersData = [];
+            itinerary.days.forEach(day => day.activities.forEach(act => {
+              if (act.lat && act.lng) {
+                coordinates.push([act.lat, act.lng]);
+                markersData.push({ ...act, day: day.dayNumber });
+              }
+            }));
+
+            if (coordinates.length === 0) return;
+
+            if (!mapInstanceRef.current) {
+              mapInstanceRef.current = L.map(mapRef.current).setView(coordinates[0], 12);
+              L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapInstanceRef.current);
+            }
+
+            const map = mapInstanceRef.current;
+            map.eachLayer(layer => { if (layer instanceof L.Marker || layer instanceof L.Polyline) map.removeLayer(layer); });
+
+            markersData.forEach(data => {
+              const icon = L.divIcon({ className: 'custom-div-icon', html: `<div style="background: #3b82f6; width: 24px; height: 24px; border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; border: 2px solid white">D${data.day}</div>`, iconSize: [24, 24] });
+              L.marker([data.lat, data.lng], { icon }).addTo(map).bindPopup(`<b>D${data.day} - ${data.name}</b>`);
+            });
+
+            if (coordinates.length > 1) {
+              const polyline = L.polyline(coordinates, { color: '#6366f1', weight: 3 }).addTo(map);
+              map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+            } else if (coordinates.length === 1) map.setView(coordinates[0], 13);
+          }, [itinerary]);
+
+          return <div ref={mapRef} className="absolute inset-0 w-full h-full z-0 rounded-[2rem]" />;
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
