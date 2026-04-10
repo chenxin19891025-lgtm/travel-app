@@ -21,6 +21,10 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+        
+        /* 卡通地图弹窗样式微调 */
+        .leaflet-popup-content-wrapper { border-radius: 1rem; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); }
+        .leaflet-popup-content { font-family: inherit; margin: 12px 16px; }
     </style>
 </head>
 <body class="bg-[#f8fafc] font-sans text-slate-800">
@@ -123,8 +127,7 @@
               要求：
               1. 每天行程包含具体地点。
               2. 必须包含真实的经纬度坐标(lat, lng)用于地图绘制。
-              3. 提供吃住行建议。
-              4. 每个活动提供 imageKeyword。
+              3. 每个地点需要给出详尽的建议。
             `;
 
             const systemPrompt = `
@@ -142,10 +145,10 @@
                         "time": "09:00",
                         "name": "地点名称",
                         "type": "attraction/food/hotel/shopping/transport",
-                        "description": "建议",
-                        "lat": 纬度,
-                        "lng": 经度,
-                        "imageKeyword": "英文关键词"
+                        "description": "请提供非常详细的背景介绍、必体验项目、推荐理由（至少80字以上），不要敷衍。",
+                        "tips": "必填：提供实用的防坑贴士，如：推荐菜品、门票大概价格、最佳拍照机位或交通建议。",
+                        "lat": 纬度(数字),
+                        "lng": 经度(数字)
                       }
                     ]
                   }
@@ -243,7 +246,7 @@
                       )}
 
                       <button onClick={handleGenerate} disabled={loading} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-lg rounded-xl shadow-xl flex items-center justify-center">
-                        {loading ? <><LoaderIcon /> DeepSeek 正在为您规划航线...</> : '开始智能规划'}
+                        {loading ? <><LoaderIcon /> 小智同学正在为您制定个性化旅游攻略...</> : '开始智能规划'}
                       </button>
                     </div>
                   </div>
@@ -251,7 +254,7 @@
               ) : (
                 <main className="pt-24 pb-8 max-w-[1500px] mx-auto px-4 md:px-6 h-screen flex flex-col">
                   <div className="bg-white rounded-2xl p-4 mb-6 flex gap-4 shrink-0 shadow-sm border border-slate-200">
-                    <button onClick={() => setItineraryData(null)} className="px-6 py-2 bg-slate-100 font-bold rounded-xl text-sm">返回</button>
+                    <button onClick={() => setItineraryData(null)} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 font-bold rounded-xl text-sm transition-colors">返回修改</button>
                   </div>
                   <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
                     <div className="lg:col-span-5 overflow-y-auto pr-2 custom-scrollbar pb-20">
@@ -262,13 +265,51 @@
                       <div className="space-y-8">
                         {itineraryData.days.map((day, idx) => (
                           <div key={idx} className="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-6">
-                            <h3 className="text-xl font-black mb-4">D{day.dayNumber} {day.theme}</h3>
-                            <div className="space-y-4">
+                            <h3 className="text-xl font-black mb-4 flex items-center">
+                              <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm mr-2">D{day.dayNumber}</span> 
+                              {day.theme}
+                            </h3>
+                            <div className="space-y-6">
                               {day.activities.map((act, i) => (
-                                <div key={i} className="border-l-4 border-blue-500 pl-4 py-2">
-                                  <div className="font-bold text-sm text-blue-600">{act.time}</div>
-                                  <div className="font-bold text-lg">{act.name}</div>
-                                  <div className="text-sm text-slate-500 mt-1">{act.description}</div>
+                                <div key={i} className="border-l-[3px] border-blue-500 pl-4 py-1 relative">
+                                  {/* Timeline Dot */}
+                                  <div className="absolute w-3 h-3 bg-blue-500 rounded-full -left-[9px] top-2 border-2 border-white"></div>
+                                  
+                                  <div className="font-bold text-sm text-blue-600 inline-block bg-blue-50 px-2 py-0.5 rounded mb-1.5">{act.time}</div>
+                                  <div className="font-bold text-xl text-slate-800">{act.name}</div>
+                                  
+                                  <div className="text-sm text-slate-600 mt-2 leading-relaxed font-medium">
+                                    {act.description}
+                                  </div>
+                                  
+                                  {act.tips && (
+                                    <div className="mt-3 text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-100 flex items-start">
+                                      <span className="mr-1.5 text-base leading-none">💡</span> 
+                                      <span>{act.tips}</span>
+                                    </div>
+                                  )}
+
+                                  {/* 真实的动作链接区 */}
+                                  <div className="mt-4 flex flex-wrap gap-2">
+                                    {act.type === 'food' && (
+                                      <a href={`https://www.dianping.com/search/keyword/0/0_${act.name}`} target="_blank" className="inline-flex items-center text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-200 hover:bg-orange-500 hover:text-white transition-all">
+                                        🍔 大众点评看评价
+                                      </a>
+                                    )}
+                                    {act.type === 'hotel' && (
+                                      <a href={`https://m.ctrip.com/html5/hotel/hotelsearch?keyword=${act.name}`} target="_blank" className="inline-flex items-center text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-600 hover:text-white transition-all">
+                                        🏨 携程查看比价
+                                      </a>
+                                    )}
+                                    <a href={`https://www.xiaohongshu.com/search_result?keyword=${act.name}`} target="_blank" className="inline-flex items-center text-xs font-bold text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-500 hover:text-white transition-all">
+                                      📕 小红书避坑指南
+                                    </a>
+                                    {(act.type === 'attraction' || act.type === 'transport' || act.type === 'shopping') && (
+                                      <a href={`https://ditu.amap.com/search?query=${act.name}`} target="_blank" className="inline-flex items-center text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 hover:bg-emerald-500 hover:text-white transition-all">
+                                        🗺️ 高德地图导航
+                                      </a>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -306,21 +347,69 @@
 
             if (!mapInstanceRef.current) {
               mapInstanceRef.current = L.map(mapRef.current).setView(coordinates[0], 12);
-              L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapInstanceRef.current);
+              // 使用浅色清新风格的底图，凸显卡通图标
+              L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                subdomains: 'abcd',
+                maxZoom: 19
+              }).addTo(mapInstanceRef.current);
             }
 
             const map = mapInstanceRef.current;
             map.eachLayer(layer => { if (layer instanceof L.Marker || layer instanceof L.Polyline) map.removeLayer(layer); });
 
+            // 绘制卡通手绘风格的路线
+            if (coordinates.length > 1) {
+              const polyline = L.polyline(coordinates, { 
+                color: '#FF6B6B', // 卡通粉红色
+                weight: 5,        // 加粗
+                dashArray: '10, 15', // 虚线效果
+                lineCap: 'round',
+                lineJoin: 'round',
+                opacity: 0.8
+              }).addTo(map);
+              map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+            } else if (coordinates.length === 1) {
+               map.setView(coordinates[0], 13);
+            }
+
+            // 绘制巨大的卡通Emoji图标
             markersData.forEach(data => {
-              const icon = L.divIcon({ className: 'custom-div-icon', html: `<div style="background: #3b82f6; width: 24px; height: 24px; border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; border: 2px solid white">D${data.day}</div>`, iconSize: [24, 24] });
-              L.marker([data.lat, data.lng], { icon }).addTo(map).bindPopup(`<b>D${data.day} - ${data.name}</b>`);
+              let color = '#3b82f6'; // 默认蓝色
+              let emoji = '📍';
+              
+              if(data.type === 'food') { color = '#f97316'; emoji = '🍔'; }
+              if(data.type === 'hotel') { color = '#8b5cf6'; emoji = '🏨'; }
+              if(data.type === 'attraction') { color = '#10b981'; emoji = '📸'; }
+              if(data.type === 'shopping') { color = '#ec4899'; emoji = '🛍️'; }
+              if(data.type === 'transport') { color = '#64748b'; emoji = '🚗'; }
+
+              const iconHtml = `
+                <div style="position: relative;">
+                  <div style="background: ${color}; width: 44px; height: 44px; border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; font-size: 24px; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transform: rotate(-5deg); transition: transform 0.2s;">
+                    ${emoji}
+                  </div>
+                  <div style="position: absolute; top: -8px; right: -8px; background: white; color: ${color}; font-size: 11px; font-weight: 900; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border: 2px solid ${color}; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                    D${data.day}
+                  </div>
+                </div>
+              `;
+
+              const icon = L.divIcon({ 
+                className: 'custom-cartoon-icon', 
+                html: iconHtml, 
+                iconSize: [44, 44],
+                iconAnchor: [22, 22],
+                popupAnchor: [0, -22]
+              });
+              
+              L.marker([data.lat, data.lng], { icon }).addTo(map).bindPopup(`
+                <div style="text-align: center; padding: 5px;">
+                  <div style="font-size: 32px; margin-bottom: 5px;">${emoji}</div>
+                  <strong style="font-size: 14px; color: #333;">D${data.day} - ${data.name}</strong>
+                </div>
+              `);
             });
 
-            if (coordinates.length > 1) {
-              const polyline = L.polyline(coordinates, { color: '#6366f1', weight: 3 }).addTo(map);
-              map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
-            } else if (coordinates.length === 1) map.setView(coordinates[0], 13);
           }, [itinerary]);
 
           return <div ref={mapRef} className="absolute inset-0 w-full h-full z-0 rounded-[2rem]" />;
