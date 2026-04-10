@@ -31,16 +31,14 @@
         const { useState, useEffect, useRef } = React;
 
         // ==========================================
-        // ⚠️ 核心配置区 (中国大陆访问必看)
+        // ⚠️ 核心配置区 (DeepSeek 模型)
         // ==========================================
-        // 1. 填入你的 API Key
-        const apiKey = "sk-Hm6bY9C0xBrjqPcDiMrOuO9iCK6lC9a5LbVM7SZC8gZvh9w3"; 
+        // 1. 填入你的 DeepSeek API Key (申请地址: platform.deepseek.com)
+        const apiKey = "sk-34e63c3fa9b34546bbf86e5eeb866f6c"; 
         
-        // 2. API 代理地址 (重要！)
-        // 官方地址为 https://generativelanguage.googleapis.com (国内无法直连)
-        // 如果你需要在中国大陆直接使用，请去寻找/搭建一个 Gemini 国内代理地址，并将下方地址替换掉。
-        // 替换示例：const apiBaseUrl = "https://api.your-proxy-domain.com";
-        const apiBaseUrl = "https://generativelanguage.googleapis.com";
+        // 2. API 地址
+        // DeepSeek 官方 API 国内直连非常友好
+        const apiBaseUrl = "https://api.deepseek.com";
         // ==========================================
 
         
@@ -98,7 +96,7 @@
 
           const handleGenerate = async () => {
             if (!apiKey) {
-              setError('由于没有配置 API Key，无法调用 AI，请在代码配置区填入您的 API Key。');
+              setError('由于没有配置 API Key，无法调用 AI，请在代码配置区填入您的 DeepSeek API Key。');
               return;
             }
 
@@ -130,7 +128,7 @@
             `;
 
             const systemPrompt = `
-              你是一个专业旅游规划师。请严格输出以下JSON，不要Markdown：
+              你是一个专业旅游规划师。请严格输出以下JSON，不要Markdown和其他任何解释性文字：
               {
                 "destination": "目的地",
                 "summary": "一句总结",
@@ -156,27 +154,33 @@
             `;
 
             try {
-              // 使用配置好的 apiBaseUrl 发送请求
+              // 使用配置好的 apiBaseUrl 发送请求 (DeepSeek 兼容 OpenAI 格式)
               const result = await fetchWithRetry(
-                `${apiBaseUrl}/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                `${apiBaseUrl}/chat/completions`,
                 {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}` // DeepSeek 使用 Bearer Token 验证
+                  },
                   body: JSON.stringify({
-                    contents: [{ parts: [{ text: userQuery }] }],
-                    systemInstruction: { parts: [{ text: systemPrompt }] },
-                    generationConfig: { responseMimeType: "application/json" }
+                    model: "deepseek-chat", // 使用 DeepSeek 对话模型
+                    messages: [
+                      { role: "system", "content": systemPrompt },
+                      { role: "user", "content": userQuery }
+                    ],
+                    response_format: { type: "json_object" } // 强制返回 JSON 对象
                   })
                 }
               );
 
-              const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+              const text = result.choices?.[0]?.message?.content;
               if (!text) throw new Error("AI未能返回有效内容");
               
               setItineraryData(JSON.parse(text));
             } catch (err) {
               console.error(err);
-              setError('生成发生错误，请检查您的网络连通性或确保 API 代理地址配置正确。');
+              setError('生成发生错误，请检查您的网络连通性或确保 DeepSeek API Key 填写正确。');
             } finally {
               setLoading(false);
             }
@@ -202,7 +206,7 @@
 
                   <div className="relative z-10 w-full max-w-5xl mx-auto px-4 text-center mt-[-5vh]">
                     <span className="inline-block py-1 px-3 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold tracking-widest mb-6 border border-white/30">
-                      POWERED BY AI
+                      POWERED BY DEEPSEEK
                     </span>
                     <h2 className="text-5xl md:text-7xl font-extrabold text-white mb-6 tracking-tight drop-shadow-lg">生成你的专属旅行</h2>
                     <p className="text-lg text-slate-100 mb-12 font-medium">一键获取包含真实地图路线、吃住行推荐的个性化深度游攻略。</p>
@@ -239,7 +243,7 @@
                       )}
 
                       <button onClick={handleGenerate} disabled={loading} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-lg rounded-xl shadow-xl flex items-center justify-center">
-                        {loading ? <><LoaderIcon /> AI 正在为您规划航线...</> : '开始智能规划'}
+                        {loading ? <><LoaderIcon /> DeepSeek 正在为您规划航线...</> : '开始智能规划'}
                       </button>
                     </div>
                   </div>
